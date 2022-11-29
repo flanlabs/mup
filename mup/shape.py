@@ -7,7 +7,8 @@ from torch.nn import Linear
 from torch.nn.modules.conv import _ConvNd
 
 from mup.infshape import InfShape, zip_infshape
-from mup.layer import MuReadout, rescale_linear_bias
+from mup.layer import MuReadout, rescale_linear_bias, INFSHAPE_DICT_KEY, get_infshape_of_param_name
+import functools
 
 __BSH_COMMENT__ = '''\
 # This is a base shape file encoded in yaml
@@ -15,11 +16,45 @@ __BSH_COMMENT__ = '''\
 # - a number indicates the base dimension of an "infinite" dimension, i.e. some notion of "width"
 '''
 
-def get_shapes(model):
-    return {name: param.shape for name, param in model.named_parameters()}
 
-def get_infshapes(model):
-    return {name: param.infshape for name, param in model.named_parameters()}
+def get_shapes(model: nn.Module):
+    # return {name: param.shape for name, param in model.named_parameters()}
+
+    # Note: this implementation puts duplicate entries for tied weights. That's intended.
+    res = {}
+    for m_name, m in model.named_modules():
+        for p_name, p in m.named_parameters(recurse=False):
+            res[m_name+"."+p_name] = p.shape
+    
+    return res
+
+# def get_shapes(model):
+#     shape_dicts = [m for m in model.modules()]
+#     all_dicts = functools.reduce(lambda acc, x: acc | x, shape_dicts, {})
+#     return all_dicts
+
+
+#     return {name: param.shape for name, param in model.named_parameters()}
+
+# def _get_last_part(path: str):
+
+
+def get_infshapes(model: nn.Module):
+    res = {}
+    for m_name, m in model.named_modules():
+        infshapes = getattr(m, INFSHAPE_DICT_KEY)
+        for (p_name, shape) in infshapes.items():
+            res[m_name+"."+p_name] = shape
+    
+    return res
+
+
+    # shape_dicts = [getattr(m, INFSHAPE_DICT_KEY).items() for (name, m) in model.named_modules()]
+    # all_dicts = functools.reduce(lambda acc, x: acc | x, shape_dicts, {})
+    # print(all_dicts)
+    # return all_dicts
+
+    # return {name: param.infshape for name, param in model.named_parameters()}
 
 def save_base_shapes(model_or_shapes, file):
     if isinstance(model_or_shapes, nn.Module):
@@ -149,9 +184,25 @@ def make_base_shapes(base_shapes, delta_shapes, savefile=None):
     return bsh
 
 
-def apply_infshapes(model, infshapes):
-    for name, p in model.named_parameters():
-        p.infshape = infshapes[name]
+def apply_infshapes(model: nn.Module, infshapes):
+    for m_name, m in model.named_modules():
+        param_shapes = {}
+        # print(m)
+        for name, p in m.named_parameters(recurse=False):
+            full_name = m_name+"."+name
+            # print(name)
+
+            # TODO: what if it's a readout? 
+            param_shapes[name] = infshapes[full_name]
+        setattr(m, INFSHAPE_DICT_KEY, param_shapes)
+
+    print(get_infshapes(model))
+
+    # for name, p in model.named_parameters():
+        
+    #     # print(name)
+    #     # print(p.)
+    #     p.infshape = infshapes[name]
 
 def set_base_shapes(model, base, rescale_params=True, delta=None, savefile=None, do_assert=True):
     '''Sets the `p.infshape` attribute for each parameter `p` of `model`.
@@ -191,6 +242,7 @@ def set_base_shapes(model, base, rescale_params=True, delta=None, savefile=None,
                 rescale_linear_bias(module)
     return model
 
+
 def assert_hidden_size_inf(model):
     '''
     This tests for any `nn.Linear` whose output dimension is finite but input
@@ -199,7 +251,8 @@ def assert_hidden_size_inf(model):
     '''
     for name, module in model.named_modules():
         if isinstance(module, Linear) and not isinstance(module, MuReadout):
-            if not module.weight.infshape[0].isinf() and module.weight.infshape[1].isinf():
+            infshapes = get_infshape_of_param_name(module, "weight")
+            if not infshapes[0].isinf() and infshapes[1].isinf():
                 assert False, (
                     f'{name} has infinite fan-in and finite fan-out dimensions but is not type `MuReadout`. '
                     'To resolve this, either change the module to `MuReadout` or change the fan-out to an infinite dimension.'

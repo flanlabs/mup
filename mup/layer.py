@@ -1,6 +1,26 @@
 # Copyright 2022 Microsoft Corporation.
 from torch.nn import Linear
+from torch import nn
+import torch
 
+
+INFSHAPE_DICT_KEY = "_param_infshapes"
+
+def get_infshape_of_param_name(module: nn.Module, param_name: str):
+    try:
+        return getattr(module, INFSHAPE_DICT_KEY)[param_name]
+    except:
+        raise RuntimeError("Please call set_base_shapes(...)")
+
+def get_infshape_of_param(module: nn.Module, param: torch.Tensor):
+    for name, p in module.named_parameters(recurse=False):
+        # Force == from object because Tensors have overriden it to do value-wise comparison
+        if object.__eq__(p, param):
+            return get_infshape_of_param_name(module, name)
+
+    raise ValueError(f"Param not found when initializing {module}")
+
+# def get_infshape
 
 class MuReadout(Linear):
     '''Drop-in replacement for all output linear layers.
@@ -25,12 +45,13 @@ class MuReadout(Linear):
             super().reset_parameters()
 
     def width_mult(self):
-        assert hasattr(self.weight, 'infshape'), (
-            'Please call set_base_shapes(...). If using torch.nn.DataParallel, '
-            'switch to distributed training with '
-            'torch.nn.parallel.DistributedDataParallel instead'
-        )
-        return self.weight.infshape.width_mult()
+        infshape = get_infshape_of_param_name(self, 'weight')
+        # assert hasattr(self.weight, 'infshape'), (
+        #     'Please call set_base_shapes(...). If using torch.nn.DataParallel, '
+        #     'switch to distributed training with '
+        #     'torch.nn.parallel.DistributedDataParallel instead'
+        # )
+        return infshape.width_mult()
 
     def _rescale_parameters(self):
         '''Rescale parameters to convert SP initialization to μP initialization.
@@ -67,7 +88,7 @@ class MuSharedReadout(MuReadout):
         super().__init__(*weight.shape, bias=bias, **kwargs)
         self.weight = weight
 
-def rescale_linear_bias(linear):
+def rescale_linear_bias(linear: nn.Linear):
     '''Rescale bias in nn.Linear layers to convert SP initialization to μP initialization.
 
     Warning: This method is NOT idempotent and should be called only once
@@ -79,6 +100,9 @@ def rescale_linear_bias(linear):
         "To bypass this error and *still rescale biases*, set `linear._has_rescaled_params=False` before this call.")
     if linear.bias is None:
         return
-    fanin_mult = linear.weight.infshape[1].width_mult()
+
+    infshape = get_infshape_of_param_name(linear, "weight")
+
+    fanin_mult = infshape[1].width_mult()
     linear.bias.data *= fanin_mult**0.5
     linear._has_rescaled_params = True

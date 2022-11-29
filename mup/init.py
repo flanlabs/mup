@@ -14,36 +14,42 @@ import math
 import warnings
 
 import torch
+from torch import nn
 from torch.nn.init import (_calculate_correct_fan,
                            _calculate_fan_in_and_fan_out, _no_grad_fill_,
                            _no_grad_normal_, _no_grad_uniform_, calculate_gain)
 
+from mup.layer import get_infshape_of_param
 
-def constant_std_init_(tensor, sampler_):
-    assert hasattr(tensor, 'infshape'), 'Please call set_base_shapes(...)'
-    if tensor.infshape.ninf() <= 1:
+# def assert_infshape_exists(module: nn.Module, tensor: torch.Tensor):
+
+
+
+def constant_std_init_(module: nn.Module, tensor: torch.Tensor, sampler_):
+    infshape = get_infshape_of_param(module, tensor)
+    if infshape.ninf() <= 1:
         sampler_(tensor)
-    elif tensor.infshape.ninf() == 2:
-        sampler_(tensor, scale=tensor.infshape.width_mult()**-0.5)
+    elif infshape.ninf() == 2:
+        sampler_(tensor, scale=infshape.width_mult()**-0.5)
     else:
         raise NotImplementedError()
     return tensor
 
-def uniform_(tensor, a=0, b=1):
+def uniform_(module: nn.Module, tensor: torch.Tensor, a=0, b=1):
     '''Drop-in replacement of `torch.nn.init.uniform_`.
     Note:
         -  if using this function, ensure `a` and `b` do not depend on fan-in,
            fan-out, or other notions of width, e.g. if a = 0, b = 1.
         - `tensor` should have `infshape` attribute set by `set_base_shapes`.
     '''
-    assert hasattr(tensor, 'infshape'), 'Please call set_base_shapes(...)'
+    infshape = get_infshape_of_param(module, tensor)
     if a != -b:
-        assert tensor.infshape.ninf() == 1, 'Sampler for (inf, inf) tensors should have mean 0'
+        assert infshape.ninf() == 1, 'Sampler for (inf, inf) tensors should have mean 0'
     def sampler_(tensor, scale=1):
         _no_grad_uniform_(tensor, a * scale, b * scale)
-    return constant_std_init_(tensor, sampler_)
+    return constant_std_init_(module, tensor, sampler_)
 
-def normal_(tensor, mean=0, std=1):
+def normal_(module: nn.Module, tensor: torch.Tensor, mean=0, std=1):
     '''Drop-in replacement of `torch.nn.init.normal_`.
     Note:
         -  if using this function, ensure `mean` and `std` do not depend on
@@ -51,43 +57,47 @@ def normal_(tensor, mean=0, std=1):
            1.
         - `tensor` should have `infshape` attribute set by `set_base_shapes`.
     '''
+    infshape = get_infshape_of_param(module, tensor)
     if mean != 0:
-        assert tensor.infshape.ninf() == 1, 'Sampler for (inf, inf) tensors should have mean 0'
+        assert infshape.ninf() == 1, 'Sampler for (inf, inf) tensors should have mean 0'
     def sampler_(tensor, scale=1):
         _no_grad_normal_(tensor, mean=mean*scale, std=std*scale)
-    return constant_std_init_(tensor, sampler_)
+    return constant_std_init_(module, tensor, sampler_)
 
-def ones_(tensor):
+def ones_(module: nn.Module, tensor: torch.Tensor):
     '''Same as `torch.nn.init.ones_`.
     Note:
         - `tensor` should have `infshape` attribute set by `set_base_shapes`.
     '''
-    assert tensor.infshape.ninf() == 1, 'Sampler for (inf, inf) tensors should have mean 0'
+    infshape = get_infshape_of_param(module, tensor)
+    assert infshape.ninf() == 1, 'Sampler for (inf, inf) tensors should have mean 0'
     def sampler_(tensor, scale=1):
         _no_grad_fill_(tensor, scale)
-    return constant_std_init_(tensor, sampler_)
+    return constant_std_init_(module, tensor, sampler_)
 
-def eye_(tensor):
+def eye_(module: nn.Module, tensor: torch.Tensor):
     '''Same as `torch.nn.init.eye_`.
     Note:
         - `tensor` should have `infshape` attribute set by `set_base_shapes`.
     '''
-    assert tensor.infshape.ninf() == 1, 'Sampler for (inf, inf) tensors should have mean 0'
+    infshape = get_infshape_of_param(module, tensor)
+    assert infshape.ninf() == 1, 'Sampler for (inf, inf) tensors should have mean 0'
     return torch.nn.init.eye_(tensor)
 
 
-def _inf_fan_adjust_xavier(scale, tensor):
-    fan_out, fan_in = tensor.infshape[:2]
+def _inf_fan_adjust_xavier(scale, module: nn.Module, tensor: torch.Tensor):
+    infshape = get_infshape_of_param(module, tensor)
+    fan_out, fan_in = infshape[:2]
     # following are needed to accomodate SP models where all infshapes are finite so base_dims are Nones
     fan_out_base_dim = fan_out.base_dim or fan_out.dim
     fan_in_base_dim = fan_in.base_dim or fan_in.dim
     scale *= math.sqrt(
         (fan_out.dim + fan_in.dim)
         / (fan_out_base_dim + fan_in_base_dim))
-    if tensor.infshape.ninf() <= 1:
+    if infshape.ninf() <= 1:
         # should have fixed scale
         pass
-    elif tensor.infshape.ninf() == 2:
+    elif infshape.ninf() == 2:
         # should scale like fanin
         assert fan_out.isinf() and fan_in.isinf()
         scale /= math.sqrt(fan_in.width_mult())
@@ -96,21 +106,22 @@ def _inf_fan_adjust_xavier(scale, tensor):
     return scale
 
 
-def xavier_uniform_(tensor, gain=1.):
+def xavier_uniform_(module: nn.Module, tensor: torch.Tensor, gain=1.):
     '''Drop-in replacement of `torch.nn.init.xavier_uniform_`.
     Note:
         -  if using this function, ensure `gain` does not depend on fan-in,
            fan-out, or other notions of width, e.g. if gain = 1.
         - `tensor` should have `infshape` attribute set by `set_base_shapes`.
     '''
+    # _ = get_infshape_of_param(module, tensor)
     fan_in, fan_out = _calculate_fan_in_and_fan_out(tensor)
     std = gain * math.sqrt(2.0 / float(fan_in + fan_out))
-    std = _inf_fan_adjust_xavier(std, tensor)
+    std = _inf_fan_adjust_xavier(std, module, tensor)
     a = math.sqrt(3.0) * std  # Calculate uniform bounds from standard deviation
     return _no_grad_uniform_(tensor, -a, a)
 
 
-def xavier_normal_(tensor, gain=1.):
+def xavier_normal_(module: nn.Module, tensor: torch.Tensor, gain=1.):
     '''Drop-in replacement of `torch.nn.init.xavier_normal_`.
     Note:
         -  if using this function, ensure `gain` does not depend on fan-in,
@@ -119,21 +130,22 @@ def xavier_normal_(tensor, gain=1.):
     '''
     fan_in, fan_out = _calculate_fan_in_and_fan_out(tensor)
     std = gain * math.sqrt(2.0 / float(fan_in + fan_out))
-    std = _inf_fan_adjust_xavier(std, tensor)
+    std = _inf_fan_adjust_xavier(std, module, tensor)
     return _no_grad_normal_(tensor, 0., std)
 
 
-def _inf_fan_adjust_kaiming(scale, tensor, mode):
-    fan_out, fan_in = tensor.infshape[:2]
-    if tensor.infshape.ninf() == 0:
+def _inf_fan_adjust_kaiming(scale, module: nn.Module, tensor: torch.Tensor, mode):
+    infshape = get_infshape_of_param(module, tensor)
+    fan_out, fan_in = infshape[:2]
+    if infshape.ninf() == 0:
         return scale
-    elif tensor.infshape.ninf() == 1:
+    elif infshape.ninf() == 1:
         # should have fixed scale
         if mode == 'fan_in' and fan_in.isinf():
             scale *= fan_in.width_mult()**0.5
         elif mode == 'fan_out' and fan_out.isinf():
             scale *= fan_out.width_mult()**0.5
-    elif tensor.infshape.ninf() == 2:
+    elif infshape.ninf() == 2:
         # should scale like fanin
         assert fan_out.isinf() and fan_in.isinf()
         if mode == 'fan_out':
@@ -142,7 +154,7 @@ def _inf_fan_adjust_kaiming(scale, tensor, mode):
         raise NotImplementedError('can only handle <=2 inf dimensions currently')
     return scale
 
-def kaiming_normal_(tensor, a=0, mode='fan_in', nonlinearity='leaky_relu'):
+def kaiming_normal_(module: nn.Module, tensor: torch.Tensor, a=0, mode='fan_in', nonlinearity='leaky_relu'):
     '''Drop-in replacement of `torch.nn.init.kaiming_normal_`.
     Note:
         -  if using this function, ensure `a` does not depend on fan-in,
@@ -154,12 +166,12 @@ def kaiming_normal_(tensor, a=0, mode='fan_in', nonlinearity='leaky_relu'):
         return tensor
     fan = _calculate_correct_fan(tensor, mode)
     gain = calculate_gain(nonlinearity, a)
-    std = _inf_fan_adjust_kaiming(gain / math.sqrt(fan), tensor, mode)
+    std = _inf_fan_adjust_kaiming(gain / math.sqrt(fan), module, tensor, mode)
     with torch.no_grad():
         return tensor.normal_(0, std)
 
 
-def kaiming_uniform_(tensor, a=0, mode='fan_in', nonlinearity='leaky_relu'):
+def kaiming_uniform_(module: nn.Module, tensor: torch.Tensor, a=0, mode='fan_in', nonlinearity='leaky_relu'):
     '''Drop-in replacement of `torch.nn.init.kaiming_uniform_`.
     Note:
         -  if using this function, ensure `a` does not depend on fan-in,
@@ -171,7 +183,7 @@ def kaiming_uniform_(tensor, a=0, mode='fan_in', nonlinearity='leaky_relu'):
         return tensor
     fan = _calculate_correct_fan(tensor, mode)
     gain = calculate_gain(nonlinearity, a)
-    std = _inf_fan_adjust_kaiming(gain / math.sqrt(fan), tensor, mode)
+    std = _inf_fan_adjust_kaiming(gain / math.sqrt(fan), module, tensor, mode)
     bound = math.sqrt(3.0) * std  # Calculate uniform bounds from standard deviation
     with torch.no_grad():
         return tensor.uniform_(-bound, bound)
@@ -179,7 +191,7 @@ def kaiming_uniform_(tensor, a=0, mode='fan_in', nonlinearity='leaky_relu'):
 
 try:
     from torch.nn.init import _no_grad_trunc_normal_
-    def trunc_normal_(tensor, mean=0, std=1, a=-2, b=2):
+    def trunc_normal_(module: nn.Module, tensor: torch.Tensor, mean=0, std=1, a=-2, b=2):
         '''Drop-in replacement of `torch.nn.init.trunc_normal_`.
         Note:
             -  if using this function, ensure `mean`, `std`, `a`, `b` do not
@@ -188,11 +200,12 @@ try:
             - `tensor` should have `infshape` attribute set by
               `set_base_shapes`.
         '''
+        infshape = get_infshape_of_param(module, tensor)
         if mean != 0 or a != -b:
-            assert tensor.infshape.ninf() == 1, 'Sampler for (inf, inf) tensors should have mean 0'
+            assert infshape.ninf() == 1, 'Sampler for (inf, inf) tensors should have mean 0'
         def sampler_(tensor, scale=1):
             _no_grad_trunc_normal_(tensor, mean=mean*scale, std=std*scale, a=a*scale, b=b*scale)
-        return constant_std_init_(tensor, sampler_)
+        return constant_std_init_(module, tensor, sampler_)
 except:
     warnings.warn(
         'Failed to import _no_grad_trunc_normal_ from torch.nn.init; '
