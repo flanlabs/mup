@@ -15,6 +15,8 @@ import mup.shape
 import mup.init
 from mup.layer import get_infshape_of_param_name
 
+import copy
+
 import composer.optim
 
 import torch.distributed.fsdp.flatten_params_wrapper
@@ -118,15 +120,14 @@ class HackedAdamW(composer.optim.DecoupledAdamW):
             initial_lr = group['initial_lr']
             weight_decay = group['weight_decay']
 
-            for p in group['params']:
-                if p.grad is None:
-                    continue
-                params_with_grad.append(p)
-                if p.grad.is_sparse:
-                    raise RuntimeError('AdamW does not support sparse gradients')
-                grads.append(p.grad)
 
-                state = self.state[p]
+            def add_task(p: torch.Tensor, grad: torch.Tensor, label, infshape: mup.InfShape):
+                params_with_grad.append(p)
+                if grad.is_sparse:
+                    raise RuntimeError('AdamW does not support sparse gradients')
+                grads.append(grad)
+
+                state = self.state[label]
 
                 # State initialization
                 if len(state) == 0:
@@ -150,6 +151,24 @@ class HackedAdamW(composer.optim.DecoupledAdamW):
                 # record the step after step update
                 state_steps.append(state['step'])
 
+            for p in group['params']:
+                if p.grad is None:
+                    continue
+
+                if isinstance(p, torch.distributed.fsdp.flatten_params_wrapper.FlatParameter):
+                    param_views = p.get_param_views()
+                    grad_views = (
+                        t.view(s)
+                        for (t, s) in zip(p.grad.split(p._param_numels), p._param_shapes)
+                    )
+                    for id, (virtual_param, virtual_grad) in enumerate(zip(param_views, grad_views)):
+                        # Since virtual view objects are ephemeral we use (flat_param, view_idx) as keys
+                        add_task(virtual_param, virtual_grad, (p, id))
+                else:
+                    add_task(p, p.grad, p, mup.get_infshape_of_param_name(self.params_to_module[p], self.param_names[p][0]))
+
+                
+
             self.adamw(params_with_grad,
                        grads,
                        exp_avgs,
@@ -169,7 +188,7 @@ class HackedAdamW(composer.optim.DecoupledAdamW):
 if __name__ == "__main__":
     print("wawawa")
 
-    a = A()
+    a = A().cuda()
 
     # print(a.linear.weight)
 
@@ -182,8 +201,8 @@ if __name__ == "__main__":
 
     # print([b for (_, b) in expand_params(a)])
 
-    rand_inp = torch.randn((1, 10), dtype=torch.float32)
-    rand_out = torch.randn((1, 5), dtype=torch.float32)
+    rand_inp = torch.randn((1, 10), dtype=torch.float32).cuda()
+    rand_out = torch.randn((1, 10), dtype=torch.float32).cuda()
 
     # forward pass works!
     # print(a(rand_inp))
@@ -209,17 +228,31 @@ if __name__ == "__main__":
 
     opt = HackedAdamW(b, infshapes, b.parameters(), lr=1e-3)
 
-    opt.add_param_group({"params": b.parameters()})
+    # opt.add_param_group({"params": b.parameters()})
 
-    mup.optim
+    # mup.optim
 
-    torch.optim.AdamW
+    # torch.optim.AdamW
 
-    # opt.zero_grad()
-    # output = b(rand_inp)
-    # loss = torch.nn.MSELoss()(output, rand_out)
-    # loss.backward()
-    # opt.step()
+    for p in b.parameters():
+        print(p)
+    
+    for i in range(3):
+        opt.zero_grad()
+        output = b(rand_inp)
+        loss = torch.nn.MSELoss()(output, rand_out)
+        loss.backward()
+        opt.step()
+
+    print("")
+    print("")
+    print("")
+    print("")
+
+    for p in b.parameters():
+        print(p)
+    
+
 
     # print([z for (_, z) in expand_params(b)])
     # print(b)
@@ -227,7 +260,6 @@ if __name__ == "__main__":
     # for p in b.parameters():
     #     assert isinstance(p, torch.distributed.fsdp.flatten_params_wrapper.FlatParameter)
     #     print(p._param_infos)
-
+    # composer.Trainer
 
     # print(a.parameters())
-
