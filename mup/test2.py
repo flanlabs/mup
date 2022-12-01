@@ -13,6 +13,7 @@ import composer.utils
 import mup
 import mup.shape
 import mup.init
+import mup.optim
 from mup.layer import get_infshape_of_param_name
 
 import copy
@@ -57,133 +58,6 @@ def expand_params(model: nn.Module):
 
     return params_with_shapes
 
-class HackedAdamW(composer.optim.DecoupledAdamW):
-    # infshape_map_by_id: Dict[str, ]
-    params_to_module: Dict[torch.Tensor, nn.Module] = {}
-    param_names: Dict[torch.Tensor, List[str]] = {}
-
-    def __init__(self, model: nn.Module, infshapes: Dict[str, mup.InfShape], *args, **kwargs):
-        self.model = model
-        self.infshapes = infshapes
-
-        super().__init__(*args, **kwargs)
-        # print(self.infshapes)
-
-    def add_param_group(self, param_group: dict) -> None:
-        self.params_to_module = {}
-        self.param_names = {}
-
-        def form_name(m_name: str, p_name: str):
-            res = m_name + "." + p_name
-            return res.replace("_fsdp_wrapped_module.", "").replace("_fpw_module.", "")
-
-        for m_name, m in self.model.named_modules():
-            for p_name, p in m.named_parameters():
-                
-                self.params_to_module[p] = m
-                if isinstance(p, torch.distributed.fsdp.flatten_params_wrapper.FlatParameter):
-                    self.param_names[p] = [form_name(m_name, n.param_name) for n in p._param_infos]
-                else:
-                    self.param_names[p] = [form_name(m_name, p_name)]
-
-        # print(param_names)
-
-        p: torch.Tensor
-        for p in param_group["params"]:
-            assert p in self.params_to_module, "Trying to add a parameter that's not preregistered"
-        return super().add_param_group(param_group)
-
-
-    @torch.no_grad()
-    def step(self, closure=None):
-        """Performs a single optimization step.
-        Args:
-            closure (callable, optional): A closure that reevaluates the model
-                and returns the loss.
-        """
-        loss = None
-        if closure is not None:
-            with torch.enable_grad():
-                loss = closure()
-
-        for group in self.param_groups:
-            params_with_grad = []
-            grads = []
-            exp_avgs = []
-            exp_avg_sqs = []
-            max_exp_avg_sqs = []
-            state_steps = []
-            amsgrad = group['amsgrad']
-            beta1, beta2 = group['betas']
-            eps = group['eps']
-            lr = group['lr']
-            initial_lr = group['initial_lr']
-            weight_decay = group['weight_decay']
-
-
-            def add_task(p: torch.Tensor, grad: torch.Tensor, label, infshape: mup.InfShape):
-                params_with_grad.append(p)
-                if grad.is_sparse:
-                    raise RuntimeError('AdamW does not support sparse gradients')
-                grads.append(grad)
-
-                state = self.state[label]
-
-                # State initialization
-                if len(state) == 0:
-                    state['step'] = 0
-                    # Exponential moving average of gradient values
-                    state['exp_avg'] = torch.zeros_like(p, memory_format=torch.preserve_format)
-                    # Exponential moving average of squared gradient values
-                    state['exp_avg_sq'] = torch.zeros_like(p, memory_format=torch.preserve_format)
-                    if amsgrad:
-                        # Maintains max of all exp. moving avg. of sq. grad. values
-                        state['max_exp_avg_sq'] = torch.zeros_like(p, memory_format=torch.preserve_format)
-
-                exp_avgs.append(state['exp_avg'])
-                exp_avg_sqs.append(state['exp_avg_sq'])
-
-                if amsgrad:
-                    max_exp_avg_sqs.append(state['max_exp_avg_sq'])
-
-                # update the steps for each param group update
-                state['step'] += 1
-                # record the step after step update
-                state_steps.append(state['step'])
-
-            for p in group['params']:
-                if p.grad is None:
-                    continue
-
-                if isinstance(p, torch.distributed.fsdp.flatten_params_wrapper.FlatParameter):
-                    param_views = p.get_param_views()
-                    grad_views = (
-                        t.view(s)
-                        for (t, s) in zip(p.grad.split(p._param_numels), p._param_shapes)
-                    )
-                    for id, (virtual_param, virtual_grad) in enumerate(zip(param_views, grad_views)):
-                        # Since virtual view objects are ephemeral we use (flat_param, view_idx) as keys
-                        add_task(virtual_param, virtual_grad, (p, id))
-                else:
-                    add_task(p, p.grad, p, mup.get_infshape_of_param_name(self.params_to_module[p], self.param_names[p][0]))
-
-                
-
-            self.adamw(params_with_grad,
-                       grads,
-                       exp_avgs,
-                       exp_avg_sqs,
-                       max_exp_avg_sqs,
-                       state_steps,
-                       amsgrad=amsgrad,
-                       beta1=beta1,
-                       beta2=beta2,
-                       lr=lr,
-                       initial_lr=initial_lr,
-                       weight_decay=weight_decay,
-                       eps=eps)
-
-        return loss
 
 if __name__ == "__main__":
     print("wawawa")
@@ -226,7 +100,7 @@ if __name__ == "__main__":
 
     b = FSDP(a, auto_wrap_policy=sharding_strategy)
 
-    opt = HackedAdamW(b, infshapes, b.parameters(), lr=1e-3)
+    opt = mup.optim.HackedMuAdamW(b, infshapes, b.parameters(), lr=1e-3)
 
     # opt.add_param_group({"params": b.parameters()})
 
