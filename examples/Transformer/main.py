@@ -13,8 +13,8 @@ try:
 except:
     print('Failed to import apex. You can still train with --precision {float|double}.')
 
-from mup.coord_check import get_coord_data, plot_coord_data
-from mup import MuAdam, MuSGD, get_shapes, make_base_shapes, set_base_shapes
+from mupx.coord_check import get_coord_data, plot_coord_data
+from mupx import MuAdam, MuSGD, get_shapes, make_base_shapes, set_base_shapes
 
 import data
 import model as mdl

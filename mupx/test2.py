@@ -10,11 +10,11 @@ import composer
 from composer.utils import dist
 import composer.utils
 
-import mup
-import mup.shape
-import mup.init
-import mup.optim
-from mup.layer import get_infshape_of_param_name
+import mupx
+import mupx.shape
+import mupx.init
+import mupx.optim
+from mupx.layer import get_infshape_of_param_name
 
 import copy
 
@@ -29,18 +29,18 @@ class A(nn.Module):
 
         self.act1 = nn.ReLU()
 
-        self.readout = mup.MuSharedReadout(self.linear.weight)
+        self.readout = mupx.MuSharedReadout(self.linear.weight)
         # self.readout = mup.MuReadout(10, 5)
     
     def forward(self, x):
         return self.readout(self.act1(self.linear(x)))
 
     def initia(self):
-        mup.init.xavier_normal_(self.linear, self.linear.weight)
+        mupx.init.xavier_normal_(self.linear, self.linear.weight)
         # mup.init.xavier_normal_(self.readout, self.readout.weight)
 
 def expand_params(model: nn.Module):
-    params_with_shapes: List[Tuple[torch.Tensor, mup.InfShape]] = []
+    params_with_shapes: List[Tuple[torch.Tensor, mupx.InfShape]] = []
     for m_name, m in model.named_modules():
         for p_name, p in m.named_parameters(recurse=False):
             if not isinstance(p, torch.distributed.fsdp.flatten_params_wrapper.FlatParameter):
@@ -67,11 +67,11 @@ if __name__ == "__main__":
     # print(a.linear.weight)
 
     # a.initialize()
-    a: A = mup.set_base_shapes(a, a)
+    a: A = mupx.set_base_shapes(a, a)
 
     a.initia()
 
-    infshapes = mup.shape.get_infshapes(a)
+    infshapes = mupx.shape.get_infshapes(a)
 
     # print([b for (_, b) in expand_params(a)])
 
@@ -103,7 +103,7 @@ if __name__ == "__main__":
     # opt = mup.optim.MuAdamW(b.parameters(), lr=1e-3, model=b)
 
 # 
-    opt = mup.optim.HackedMuAdamW(b, infshapes, b.parameters(), lr=1e-3)
+    opt = mupx.optim.HackedMuAdamW(b, infshapes, b.parameters(), lr=1e-3)
 
     # opt.add_param_group({"params": b.parameters()})
 

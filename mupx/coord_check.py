@@ -563,7 +563,7 @@ def example_plot_coord_check(
     init='kaiming_fan_in_normal', download_cifar=True, legend='full',
     dict_in_out=False, name_contains=None, name_not_contains=None):
 
-    from mup.test.models import get_lazy_models, get_train_loader
+    from mupx.test.models import get_lazy_models, get_train_loader
     if batchnorm:
         batch_size = 5    
     train_loader = get_train_loader(batch_size=batch_size, download=download_cifar)

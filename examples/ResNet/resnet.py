@@ -7,7 +7,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn import init
 
-from mup import MuReadout
+from mupx import MuReadout
 
 class BasicBlock(nn.Module):
     expansion = 1

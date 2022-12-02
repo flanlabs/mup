@@ -6,8 +6,8 @@ from torch import nn
 from torch.nn import Linear
 from torch.nn.modules.conv import _ConvNd
 
-from mup.infshape import InfShape, zip_infshape
-from mup.layer import MuReadout, rescale_linear_bias, INFSHAPE_DICT_KEY, get_infshape_of_param_name
+from mupx.infshape import InfShape, zip_infshape
+from mupx.layer import MuReadout, rescale_linear_bias, INFSHAPE_DICT_KEY, get_infshape_of_param_name
 import functools
 
 __BSH_COMMENT__ = '''\

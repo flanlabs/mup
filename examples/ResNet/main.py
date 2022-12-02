@@ -8,8 +8,8 @@ import torch.nn as nn
 import torch.optim as optim
 import torchvision
 import torchvision.transforms as transforms
-from mup.coord_check import get_coord_data, plot_coord_data
-from mup import MuAdam, MuSGD, get_shapes, make_base_shapes, set_base_shapes
+from mupx.coord_check import get_coord_data, plot_coord_data
+from mupx import MuAdam, MuSGD, get_shapes, make_base_shapes, set_base_shapes
 
 import resnet
 

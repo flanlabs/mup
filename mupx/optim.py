@@ -28,14 +28,14 @@ from torch import nn
 import torch
 from torch.distributed.fsdp.flatten_params_wrapper import FlatParameter
 import composer.optim
-import mup.shape
+import mupx.shape
 
 class HackedMuAdamW(composer.optim.DecoupledAdamW):
     # infshape_map_by_id: Dict[str, ]
     params_to_module: Dict[torch.Tensor, nn.Module] = {}
     param_names: Dict[torch.Tensor, List[str]] = {}
 
-    def __init__(self, model: nn.Module, infshapes: Dict[str, mup.shape.InfShape], *args, **kwargs):
+    def __init__(self, model: nn.Module, infshapes: Dict[str, mupx.shape.InfShape], *args, **kwargs):
         self.model = model
         self.infshapes = infshapes
 
@@ -92,7 +92,7 @@ class HackedMuAdamW(composer.optim.DecoupledAdamW):
             # weight_decay = [] # group['weight_decay']
 
 
-            def compute_adamw(p: torch.Tensor, grad: torch.Tensor, label, infshape: mup.shape.InfShape):
+            def compute_adamw(p: torch.Tensor, grad: torch.Tensor, label, infshape: mupx.shape.InfShape):
                 # params_with_grad.append(p)
                 if grad.is_sparse:
                     raise RuntimeError('AdamW does not support sparse gradients')
@@ -150,12 +150,12 @@ class HackedMuAdamW(composer.optim.DecoupledAdamW):
                         for (t, s) in zip(p.grad.split(p._param_numels), p._param_shapes)
                     )
                     for id, (virtual_param, virtual_grad, info) in enumerate(zip(param_views, grad_views, p._param_infos)):
-                        infshape = mup.shape.get_infshape_of_param_name(info.module, info.param_name)
+                        infshape = mupx.shape.get_infshape_of_param_name(info.module, info.param_name)
 
                         # Since virtual view objects are ephemeral we use (flat_param, view_idx) as keys
                         key = (p, id)
                         compute_adamw(virtual_param, virtual_grad, key, infshape)
                 else:
-                    compute_adamw(p, p.grad, p, mup.shape.get_infshape_of_param_name(self.params_to_module[p], self.param_names[p][0].split(".")[-1]))
+                    compute_adamw(p, p.grad, p, mupx.shape.get_infshape_of_param_name(self.params_to_module[p], self.param_names[p][0].split(".")[-1]))
 
         return loss

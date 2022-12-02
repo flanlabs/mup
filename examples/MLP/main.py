@@ -10,8 +10,8 @@ import torch.optim as optim
 import argparse
 import math
 
-from mup.coord_check import get_coord_data, plot_coord_data
-from mup import MuSGD, get_shapes, set_base_shapes, make_base_shapes, MuReadout
+from mupx.coord_check import get_coord_data, plot_coord_data
+from mupx import MuSGD, get_shapes, set_base_shapes, make_base_shapes, MuReadout
 
 def coord_check(mup, lr, train_loader, nsteps, nseeds, args, plotdir='', legend=False):
 

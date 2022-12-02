@@ -1,12 +1,12 @@
 
 import torch
 from torchvision import transforms, datasets
-from mup.shape import set_base_shapes
+from mupx.shape import set_base_shapes
 from torch import nn
 from torch.nn import Linear
-from mup.layer import MuReadout
+from mupx.layer import MuReadout
 from functools import partial
-from mup.init import (kaiming_normal_, kaiming_uniform_, normal_,
+from mupx.init import (kaiming_normal_, kaiming_uniform_, normal_,
                          trunc_normal_, uniform_, xavier_normal_,
                          xavier_uniform_)
 from torch.nn.modules.conv import _ConvNd
