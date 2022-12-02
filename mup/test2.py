@@ -100,6 +100,9 @@ if __name__ == "__main__":
 
     b = FSDP(a, auto_wrap_policy=sharding_strategy)
 
+    # opt = mup.optim.MuAdamW(b.parameters(), lr=1e-3, model=b)
+
+# 
     opt = mup.optim.HackedMuAdamW(b, infshapes, b.parameters(), lr=1e-3)
 
     # opt.add_param_group({"params": b.parameters()})
