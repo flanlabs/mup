@@ -40,7 +40,6 @@ class HackedMuAdamW(composer.optim.DecoupledAdamW):
         self.infshapes = infshapes
 
         super().__init__(*args, **kwargs)
-        # print(self.infshapes)
 
     def add_param_group(self, param_group: dict) -> None:
         self.params_to_module = {}
@@ -58,8 +57,6 @@ class HackedMuAdamW(composer.optim.DecoupledAdamW):
                     self.param_names[p] = [form_name(m_name, n.param_name) for n in p._param_infos]
                 else:
                     self.param_names[p] = [form_name(m_name, p_name)]
-
-        # print(param_names)
 
         p: torch.Tensor
         for p in param_group["params"]:
@@ -105,7 +102,6 @@ class HackedMuAdamW(composer.optim.DecoupledAdamW):
 
                 # State initialization
                 if len(state) == 0:
-                    print('reinitializing!!! ', p.shape)
                     state['step'] = 0
                     # Exponential moving average of gradient values
                     state['exp_avg'] = torch.zeros_like(p, memory_format=torch.preserve_format)
@@ -128,13 +124,6 @@ class HackedMuAdamW(composer.optim.DecoupledAdamW):
                         raise NotImplementedError('more than 2 inf dimensions')
                 else:
                     mup_factor = 1.0
-
-                print(mup_factor)
-
-                # lr.append(group['lr'] * mup_factor)
-                # initial_lr.append(group['initial_lr'] * mup_factor)
-                # weight_decay.append(group['weight_decay'] * mup_factor)
-
 
                 self.adamw([p],
                         [grad],
@@ -167,6 +156,6 @@ class HackedMuAdamW(composer.optim.DecoupledAdamW):
                         key = (p, id)
                         compute_adamw(virtual_param, virtual_grad, key, infshape)
                 else:
-                    compute_adamw(p, p.grad, p, mup.shape.get_infshape_of_param_name(self.params_to_module[p], self.param_names[p][0]))
+                    compute_adamw(p, p.grad, p, mup.shape.get_infshape_of_param_name(self.params_to_module[p], self.param_names[p][0].split(".")[-1]))
 
         return loss

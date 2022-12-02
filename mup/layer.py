@@ -10,7 +10,7 @@ def get_infshape_of_param_name(module: nn.Module, param_name: str):
     try:
         return getattr(module, INFSHAPE_DICT_KEY)[param_name]
     except:
-        raise RuntimeError("Please call set_base_shapes(...)")
+        raise RuntimeError(f"No infshape for layer {param_name}, Please call set_base_shapes(...)")
 
 def get_infshape_of_param(module: nn.Module, param: torch.Tensor):
     for name, p in module.named_parameters(recurse=False):

@@ -196,7 +196,7 @@ def apply_infshapes(model: nn.Module, infshapes):
             param_shapes[name] = infshapes[full_name]
         setattr(m, INFSHAPE_DICT_KEY, param_shapes)
 
-    print(get_infshapes(model))
+    # print(get_infshapes(model))
 
     # for name, p in model.named_parameters():
         

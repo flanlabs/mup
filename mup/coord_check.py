@@ -10,6 +10,9 @@ import numpy as np
 import pandas as pd
 import torch
 import torch.nn.functional as F
+import torch.nn as nn
+
+from typing import Union, Literal, Callable, Any
 
 
 def cov(x):
@@ -321,6 +324,7 @@ def _get_coord_data(models, dataloader, optcls, nsteps=3,
                     output = model(data)
                     if flatten_output:
                         output = output.view(-1, output.shape[-1])
+                        target = target.view(-1)
                     if one_hot_target:
                         target = F.one_hot(target,
                                   num_classes=output.size(-1)).float()
@@ -352,7 +356,7 @@ def _get_coord_data(models, dataloader, optcls, nsteps=3,
     return pd.DataFrame(df)
 
 
-def get_coord_data(models, dataloader, optimizer='sgd', lr=None, mup=True,
+def get_coord_data(models, dataloader, optimizer:Union[Literal['sgd'], Literal['adam'], Literal['adamw'], Callable[[nn.Module], Any]]  = 'sgd', lr=None, mup=True,
                     filter_trainable_by_name=None,
                     **kwargs):
     '''Get coord data for coord check.
@@ -438,10 +442,10 @@ def get_coord_data(models, dataloader, optimizer='sgd', lr=None, mup=True,
     '''
     if lr is None:
         lr = 0.1 if optimizer == 'sgd' else 1e-3
-    if mup:
-        from mup.optim import MuAdam as Adam
-        from mup.optim import MuAdamW as AdamW
-        from mup.optim import MuSGD as SGD
+    # if mup:
+    #     from mup.optim import MuAdam as Adam
+    #     from mup.optim import MuAdamW as AdamW
+    #     from mup.optim import MuSGD as SGD
     else:
         from torch.optim import SGD, Adam, AdamW
     def get_trainable(model):
@@ -460,6 +464,8 @@ def get_coord_data(models, dataloader, optimizer='sgd', lr=None, mup=True,
         optcls = lambda model: AdamW(get_trainable(model), lr=lr)
     elif optimizer is None:
         raise ValueError('optimizer should be sgd|adam|adamw or a custom function')
+    else:
+        optcls = optimizer
     
     data = _get_coord_data(models, dataloader, optcls, **kwargs)
     data['optimizer'] = optimizer
