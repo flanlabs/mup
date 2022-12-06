@@ -26,9 +26,57 @@ from torch.optim import SGD, Adam, AdamW
 
 from torch import nn
 import torch
-from torch.distributed.fsdp.flatten_params_wrapper import FlatParameter
+from torch.distributed.fsdp.flatten_params_wrapper import FlatParameter, ParamInfo
 import composer.optim
 import mupx.shape
+
+
+class ViewWithGrad:
+    @property
+    def __class__(self):
+        return torch.Tensor
+
+    def __init__(self, p: FlatParameter, info: ParamInfo, offset: int, numels: int):
+        # assert p._shared_param_infos == []
+        # local_idxes = p._param_indice_in_shard
+
+        self.p = p
+        self.info = info
+        self.offset = offset
+        self.numels = numels
+        # self.shape = shape
+
+        # self.view = 
+
+    @property
+    def view(self):
+        return self.p.split((self.offset, self.numels, self.p.numel() - self.offset - self.numels))[1]#.view(shape)
+
+    def __getattr__(self, name):
+        return getattr(self.view, name)
+
+    @property
+    def grad(self):
+        if self.p.grad is None: return None
+        return self.p.grad.split((self.offset, self.numels, self.p.numel() - self.offset - self.numels))[1]#.view(shape)
+
+    @property
+    def is_leaf(self):
+        # HACK
+        return True
+
+    @classmethod
+    def __torch_function__(cls, func, types, args=(), kwargs=None):
+        # print("lloking up")
+        # logging.info(f"func: {func.__name__}, args: {args!r}, kwargs: {kwargs!r}")
+        if kwargs is None:
+            kwargs = {}
+
+        args = [a.view if isinstance(a, ViewWithGrad) else a for a in args]
+        return func(*args, **kwargs)
+
+        
+
 
 class HackedMuAdamW(composer.optim.DecoupledAdamW):
     # infshape_map_by_id: Dict[str, ]

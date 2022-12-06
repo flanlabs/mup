@@ -8,7 +8,7 @@ import pandas as pd
 import torch
 import torch.nn.functional as F
 from mupx.coord_check import get_coord_data
-from mupx.optim import MuAdam, MuSGD
+# from mupx.optim import MuAdam, MuSGD
 from mupx.shape import get_infshapes, get_shapes, make_base_shapes, set_base_shapes
 from mupx.test.models import (generate_CNN, generate_MLP, _generate_MLP, get_lazy_models,
                              get_train_loader, init_methods)
